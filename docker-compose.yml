@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  todo-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: todo-service
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=default
+      # Overridable scheduler interval (default 60s)
+      - TODO_SCHEDULER_PAST_DUE_SWEEP_DELAY_MS=60000
+    volumes:
+      # Mount a local directory to persist JSON log files from the container
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped

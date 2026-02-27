@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logback configuration for the To-Do Service.
+
+  Two appenders:
+    1. CONSOLE — human-readable coloured output for local development.
+       Includes MDC fields (traceId, httpMethod, requestPath) automatically
+       via the pattern.
+    2. FILE_JSON — machine-readable JSON (Logstash format) written to
+       logs/todo-service.log with daily rolling and 30-day retention.
+       Ideal for ingestion into ELK, Datadog, or any log aggregator.
+
+  Both appenders include all MDC context keys, so every log line is
+  automatically enriched with traceId, httpMethod, and requestPath
+  without any code changes needed in individual classes.
+-->
+<configuration>
+
+    <!-- ─── Properties ──────────────────────────────────────────────────── -->
+    <property name="LOG_DIR"  value="logs"/>
+    <property name="APP_NAME" value="todo-service"/>
+
+    <!-- ─── Console Appender (human-readable) ───────────────────────────── -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>
+                %d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [%cyan(${APP_NAME})] [traceId=%X{traceId:-–}] [%thread] %logger{36} - %msg%n
+            </pattern>
+        </encoder>
+    </appender>
+
+    <!-- ─── JSON File Appender (structured / machine-readable) ──────────── -->
+    <appender name="FILE_JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/${APP_NAME}.log</file>
+
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!-- Daily roll, keep 30 days, cap total size at 1GB -->
+            <fileNamePattern>${LOG_DIR}/${APP_NAME}.%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+
+        <!--
+          LogstashEncoder writes each log event as a single JSON object per line.
+          All MDC keys (traceId, httpMethod, requestPath) are automatically
+          included as top-level JSON fields — no extra configuration needed.
+          This format is directly ingestible by Logstash, Filebeat, Fluent Bit, etc.
+        -->
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>traceId</includeMdcKeyName>
+            <includeMdcKeyName>httpMethod</includeMdcKeyName>
+            <includeMdcKeyName>requestPath</includeMdcKeyName>
+            <customFields>{"application":"${APP_NAME}"}</customFields>
+            <fieldNames>
+                <timestamp>timestamp</timestamp>
+                <message>message</message>
+                <logger>logger</logger>
+                <thread>thread</thread>
+                <levelValue>[ignore]</levelValue>
+            </fieldNames>
+        </encoder>
+    </appender>
+
+    <!-- ─── Async wrapper for FILE_JSON (non-blocking I/O) ──────────────── -->
+    <appender name="ASYNC_FILE_JSON" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="FILE_JSON"/>
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <!-- Preserve caller data so class/method/line are available in logs -->
+        <includeCallerData>false</includeCallerData>
+    </appender>
+
+    <!-- ─── Root Logger ──────────────────────────────────────────────────── -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE_JSON"/>
+    </root>
+
+    <!-- ─── Application Logger (DEBUG for full visibility) ──────────────── -->
+    <logger name="com.todo" level="DEBUG" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE_JSON"/>
+    </logger>
+
+    <!-- ─── Reduce framework noise ───────────────────────────────────────── -->
+    <logger name="org.springframework"          level="INFO"/>
+    <logger name="org.hibernate.SQL"            level="WARN"/>
+    <logger name="org.hibernate.type"           level="WARN"/>
+    <logger name="com.zaxxer.hikari"            level="INFO"/>
+    <logger name="org.springframework.scheduling" level="INFO"/>
+
+</configuration>
